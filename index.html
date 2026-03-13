@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>拖拽解密游戏</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+        
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            touch-action: none;
+            overflow: hidden;
+        }
+        
+        h1 {
+            color: white;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            font-size: 24px;
+        }
+        
+        .level-info {
+            color: white;
+            margin-bottom: 20px;
+            font-size: 18px;
+        }
+        
+        .game-container {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            max-width: 500px;
+            width: 100%;
+        }
+        
+        .puzzle-area {
+            border: 3px dashed #667eea;
+            border-radius: 10px;
+            min-height: 250px;
+            padding: 15px;
+            margin-bottom: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .drop-zone {
+            width: 80px;
+            height: 80px;
+            border: 3px solid #ccc;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 8px;
+            background: #f5f5f5;
+            font-size: 35px;
+            transition: all 0.3s;
+            flex-shrink: 0;
+        }
+        
+        .drop-zone.highlight {
+            border-color: #667eea;
+            background: #e8eaff;
+            transform: scale(1.05);
+        }
+        
+        .drop-zone.correct {
+            border-color: #4CAF50;
+            background: #e8f5e9;
+        }
+        
+        .items-area {
+            background: #f9f9f9;
+            border-radius: 10px;
+            padding: 15px;
+            min-height: 100px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .draggable-item {
+            width: 70px;
+            height: 70px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 8px;
+            cursor: grab;
+            font-size: 35px;
+            color: white;
+            touch-action: none;
+            position: relative;
+            z-index: 1;
+            flex-shrink: 0;
+        }
+        
+        .draggable-item.dragging {
+            position: fixed;
+            z-index: 9999;
+            pointer-events: none;
+            opacity: 0.9;
+            transform: scale(1.2);
+        }
+        
+        .draggable-item.placed {
+            opacity: 0.3;
+            cursor: default;
+        }
+        
+        .message {
+            text-align: center;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            font-weight: bold;
+            display: none;
+        }
+        
+        .message.success {
+            background: #4CAF50;
+            color: white;
+            display: block;
+        }
+        
+        .message.hint {
+            background: #ff9800;
+            color: white;
+            display: block;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px 5px;
+            transition: transform 0.2s;
+        }
+        
+        .btn:hover {
+            transform: scale(1.05);
+        }
+        
+        .btn-hint {
+            background: #ff9800;
+        }
+        
+        .clue {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            color: #856404;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔐 拖拽解密游戏</h1>
+    <div class="level-info">关卡：<span id="level">1</span> / <span id="total-levels">3</span></div>
+    
+    <div class="game-container">
+        <div class="clue" id="clue">
+            <strong>💡 线索：</strong> <span id="clue-text">加载中...</span>
+        </div>
+        
+        <div class="puzzle-area" id="puzzle-area">
+            <!-- 放置区域 -->
+        </div>
+        
+        <div class="items-area" id="items-area">
+            <!-- 可拖拽物品 -->
+        </div>
+        
+        <div class="message" id="message"></div>
+        
+        <div style="text-align: center; margin-top: 15px;">
+            <button class="btn btn-hint" onclick="showHint()">💡 提示</button>
+            <button class="btn" onclick="resetLevel()">🔄 重置</button>
+        </div>
+    </div>
+
+    <script>
+        // 游戏关卡数据
+        const levels = [
+            {
+                clue: "按照数字从小到大的顺序排列",
+                items: [
+                    { id: 'num3', emoji: '3️⃣', correctZone: 2 },
+                    { id: 'num1', emoji: '1️⃣', correctZone: 0 },
+                    { id: 'num2', emoji: '2️⃣', correctZone: 1 }
+                ],
+                zones: ['①', '②', '③']
+            },
+            {
+                clue: "把动物送回它们的家",
+                items: [
+                    { id: 'fish', emoji: '🐟', correctZone: 2 },
+                    { id: 'bird', emoji: '🐦', correctZone: 0 },
+                    { id: 'cat', emoji: '🐱', correctZone: 1 }
+                ],
+                zones: ['🌳', '🏠', '🌊']
+            },
+            {
+                clue: "按照颜色分类：红色→蓝色→绿色",
+                items: [
+                    { id: 'green', emoji: '🟢', correctZone: 2 },
+                    { id: 'red', emoji: '🔴', correctZone: 0 },
+                    { id: 'blue', emoji: '🔵', correctZone: 1 }
+                ],
+                zones: ['❤️', '💙', '💚']
+            }
+        ];
+
+        let currentLevel = 0;
+        let placedItems = {};
+        let draggedItem = null;
+        let offsetX = 0;
+        let offsetY = 0;
+        let cloneElement = null;
+
+        // 初始化游戏
+        function initGame() {
+            loadLevel(currentLevel);
+        }
+
+        // 加载关卡
+        function loadLevel(levelIndex) {
+            const level = levels[levelIndex];
+            document.getElementById('level').textContent = levelIndex + 1;
+            document.getElementById('clue-text').textContent = level.clue;
+            document.getElementById('message').className = 'message';
+            document.getElementById('message').textContent = '';
+            placedItems = {};
+
+            // 创建放置区域
+            const puzzleArea = document.getElementById('puzzle-area');
+            puzzleArea.innerHTML = '';
+            level.zones.forEach((zone, index) => {
+                const dropZone = document.createElement('div');
+                dropZone.className = 'drop-zone';
+                dropZone.textContent = zone;
+                dropZone.dataset.index = index;
+                puzzleArea.appendChild(dropZone);
+            });
+
+            // 创建可拖拽物品
+            const itemsArea = document.getElementById('items-area');
+            itemsArea.innerHTML = '';
+            level.items.forEach(item => {
+                const draggable = document.createElement('div');
+                draggable.className = 'draggable-item';
+                draggable.textContent = item.emoji;
+                draggable.dataset.id = item.id;
+                draggable.dataset.correctZone = item.correctZone;
+                
+                // 鼠标事件
+                draggable.addEventListener('mousedown', handleDragStart);
+                // 触摸事件
+                draggable.addEventListener('touchstart', handleTouchStart, { passive: false });
+                
+                itemsArea.appendChild(draggable);
+            });
+        }
+
+        // 鼠标拖拽开始
+        function handleDragStart(e) {
+            if (e.target.classList.contains('placed')) return;
+            e.preventDefault();
+            
+            draggedItem = e.target;
+            const rect = draggedItem.getBoundingClientRect();
+            offsetX = e.clientX - rect.left;
+            offsetY = e.clientY - rect.top;
+            
+            // 创建克隆体用于拖拽
+            cloneElement = draggedItem.cloneNode(true);
+            cloneElement.classList.add('dragging');
+            cloneElement.style.width = rect.width + 'px';
+            cloneElement.style.height = rect.height + 'px';
+            document.body.appendChild(cloneElement);
+            
+            moveClone(e.clientX, e.clientY);
+            
+            document.addEventListener('mousemove', handleDragMove);
+            document.addEventListener('mouseup', handleDragEnd);
+        }
+
+        // 鼠标拖拽移动
+        function handleDragMove(e) {
+            if (!cloneElement) return;
+            e.preventDefault();
+            moveClone(e.clientX, e.clientY);
+            
+            // 高亮检测
+            checkHighlight(e.clientX, e.clientY);
+        }
+
+        // 鼠标拖拽结束
+        function handleDragEnd(e) {
+            if (!cloneElement) return;
+            
+            // 检测放置
+            const dropZone = getDropZone(e.clientX, e.clientY);
+            
+            if (dropZone) {
+                const zoneIndex = parseInt(dropZone.dataset.index);
+                const correctZone = parseInt(draggedItem.dataset.correctZone);
+                placeItem(draggedItem, dropZone, zoneIndex, correctZone);
+            }
+            
+            cleanup();
+        }
+
+        // 触摸开始
+        function handleTouchStart(e) {
+            if (e.target.classList.contains('placed')) return;
+            e.preventDefault();
+            
+            const touch = e.touches[0];
+            draggedItem = e.target;
+            const rect = draggedItem.getBoundingClientRect();
+            offsetX = touch.clientX - rect.left;
+            offsetY = touch.clientY - rect.top;
+            
+            // 创建克隆体
+            cloneElement = draggedItem.cloneNode(true);
+            cloneElement.classList.add('dragging');
+            cloneElement.style.width = rect.width + 'px';
+            cloneElement.style.height = rect.height + 'px';
+            document.body.appendChild(cloneElement);
+            
+            moveClone(touch.clientX, touch.clientY);
+        }
+
+        // 触摸移动
+        function handleTouchMove(e) {
+            if (!cloneElement) return;
+            e.preventDefault();
+            
+            const touch = e.touches[0];
+            moveClone(touch.clientX, touch.clientY);
+            checkHighlight(touch.clientX, touch.clientY);
+        }
+
+        // 触摸结束
+        function handleTouchEnd(e) {
+            if (!cloneElement) return;
+            e.preventDefault();
+            
+            const touch = e.changedTouches[0];
+            const dropZone = getDropZone(touch.clientX, touch.clientY);
+            
+            if (dropZone) {
+                const zoneIndex = parseInt(dropZone.dataset.index);
+                const correctZone = parseInt(draggedItem.dataset.correctZone);
+                placeItem(draggedItem, dropZone, zoneIndex, correctZone);
+            }
+            
+            cleanup();
+        }
+
+        // 移动克隆体
+        function moveClone(x, y) {
+            if (cloneElement) {
+                cloneElement.style.left = (x - offsetX) + 'px';
+                cloneElement.style.top = (y - offsetY) + 'px';
+            }
+        }
+
+        // 检测放置区域
+        function getDropZone(x, y) {
+            cloneElement.style.display = 'none';
+            const elem = document.elementFromPoint(x, y);
+            cloneElement.style.display = 'flex';
+            
+            if (elem && elem.classList.contains('drop-zone')) {
+                return elem;
+            }
+            return null;
+        }
+
+        // 高亮检测
+        function checkHighlight(x, y) {
+            document.querySelectorAll('.drop-zone').forEach(zone => {
+                zone.classList.remove('highlight');
+            });
+            
+            const dropZone = getDropZone(x, y);
+            if (dropZone && dropZone.children.length === 0) {
+                dropZone.classList.add('highlight');
+            }
+        }
+
+        // 清理
+        function cleanup() {
+            if (cloneElement) {
+                cloneElement.remove();
+                cloneElement = null;
+            }
+            draggedItem = null;
+            document.querySelectorAll('.drop-zone').forEach(zone => {
+                zone.classList.remove('highlight');
+            });
+            document.removeEventListener('mousemove', handleDragMove);
+            document.removeEventListener('mouseup', handleDragEnd);
+        }
+
+        // 放置物品
+        function placeItem(item, zone, zoneIndex, correctZone) {
+            if (zone.children.length > 0 || item.classList.contains('placed')) return;
+            
+            zone.textContent = item.textContent;
+            zone.classList.add('placed');
+            item.classList.add('placed');
+            
+            placedItems[zoneIndex] = correctZone;
+            
+            if (zoneIndex === correctZone) {
+                zone.classList.add('correct');
+            }
+            
+            checkWin();
+        }
+
+        // 检查胜利
+        function checkWin() {
+            const level = levels[currentLevel];
+            const allPlaced = Object.keys(placedItems).length === level.items.length;
+            
+            if (!allPlaced) return;
+            
+            let allCorrect = true;
+            for (let i = 0; i < level.items.length; i++) {
+                if (placedItems[i] !== i) {
+                    allCorrect = false;
+                    break;
+                }
+            }
+            
+            if (allCorrect) {
+                const message = document.getElementById('message');
+                message.textContent = '🎉 恭喜！关卡完成！';
+                message.className = 'message success';
+                
+                setTimeout(() => {
+                    if (currentLevel < levels.length - 1) {
+                        currentLevel++;
+                        loadLevel(currentLevel);
+                    } else {
+                        message.textContent = '🏆 太棒了！你完成了所有关卡！';
+                    }
+                }, 1500);
+            }
+        }
+
+        // 显示提示
+        function showHint() {
+            const level = levels[currentLevel];
+            const message = document.getElementById('message');
+            message.textContent = '💡 提示：' + level.clue;
+            message.className = 'message hint';
+            
+            setTimeout(() => {
+                message.className = 'message';
+            }, 3000);
+        }
+
+        // 重置关卡
+        function resetLevel() {
+            loadLevel(currentLevel);
+        }
+
+        // 启动游戏
+        initGame();
+    </script>
+</body>
+</html>
